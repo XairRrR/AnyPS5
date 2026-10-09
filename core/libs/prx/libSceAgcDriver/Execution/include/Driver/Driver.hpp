@@ -66,6 +66,11 @@ private:
     friend struct PendingView;
     friend struct PacketTimer;
     void stop();
+    void registerShader(const Shader* shader);
+    void adoptHeader(const Shader* shader);
+    void resolveShaderAbi(const Shader* shader, std::span<const ShaderRegister> context, std::span<const ShaderRegister> primitive);
+    void resolveGraphicsStagesAbi(std::span<const Shader* const> stages, std::span<const ShaderRegister> context, std::span<const ShaderRegister> primitive);
+    void resolveGraphicsAbi(const Shader* vertex, const Shader* pixel, std::uint32_t primitiveType);
     Driver();
     void rethrowFailure() const;
     void checkStopping() const;

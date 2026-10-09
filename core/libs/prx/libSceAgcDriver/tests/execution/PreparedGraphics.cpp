@@ -144,6 +144,16 @@ void Check(AgcDriver::VulkanDevice& device, AgcDriver::Graphics::ShaderPath path
             transaction.Commit();
         }, "tessellation shaders are unavailable");
         Require(front.snapshot->prepared->entries.size() == frontCount && fragment.snapshot->prepared->entries.size() == pixelCount && front.snapshot->prepared->rectangles.empty() && front.snapshot->prepared->fragments.empty() && !front.snapshot->prepared->rectangleRequested, "failed rectangle compilation published part of the stage group");
+        {
+            RecompileResult vertexResult;
+            RecompileResult pixelResult;
+            static_cast<CompiledShaderArtifact&>(vertexResult) = GetPreparedArtifact(*stages.front().entry.handle);
+            static_cast<CompiledShaderArtifact&>(pixelResult) = pixelArtifact;
+            const auto unprepared = RectangleFor(*front.snapshot, vertexResult, pixelResult, target);
+            Require(!unprepared.control.spirv.empty() && !unprepared.evaluation.spirv.empty() && front.snapshot->prepared->rectangles.size() == 1, "rectangle shaders of a pair no helper resolved were not built at the draw");
+            static_cast<void>(RectangleFor(*front.snapshot, vertexResult, pixelResult, target));
+            Require(front.snapshot->prepared->rectangles.size() == 1, "rectangle shaders built at a draw were not reused");
+        }
         for (const bool primitiveFirst : {false, true}) {
             front.snapshot->prepared->rectangles.clear();
             front.snapshot->prepared->rectangleProgress.clear();
@@ -217,13 +227,17 @@ void Check(AgcDriver::VulkanDevice& device, AgcDriver::Graphics::ShaderPath path
         request.layout.pushConstantSizeBytes -= 4;
         static_cast<void>(InvocationFor(*program.snapshot, program.codeOffset, request));
         request.layout.pushConstantOffsetBytes = 2;
-        Reject([&] { static_cast<void>(InvocationFor(*program.snapshot, program.codeOffset, request)); }, "artifact is missing");
+        Reject([&] { static_cast<void>(InvocationFor(*program.snapshot, program.codeOffset, request)); }, "not dword-aligned");
         request.layout = {0, 0, 0, mesh ? MeshDrawPushOffsetBytes : 128u};
         if (pixel) request.context.pixel->interpolatorSettings[0] ^= 1u;
         else if (tessellation) ++request.graphics->tessellation->outputControlPoints;
         else if (mesh) ++request.graphics->mesh->maxVertices;
         else ++request.context.userDataBaseRegister;
-        Reject([&] { static_cast<void>(InvocationFor(*program.snapshot, program.codeOffset, request)); }, "artifact is missing");
+        const auto predicted = program.snapshot->prepared->entries.size();
+        static_cast<void>(InvocationFor(*program.snapshot, program.codeOffset, request));
+        Require(program.snapshot->prepared->entries.size() == predicted + 1, "a draw state that registration did not predict was not prepared");
+        static_cast<void>(InvocationFor(*program.snapshot, program.codeOffset, request));
+        Require(program.snapshot->prepared->entries.size() == predicted + 1, "an artifact prepared at a draw was not reused");
     }
     ShaderRegistry invalidRegistry;
     DrawDecode invalid{};
@@ -234,6 +248,47 @@ void Check(AgcDriver::VulkanDevice& device, AgcDriver::Graphics::ShaderPath path
     Reject([&] { DecodeGraphicsPrograms(invalid, queue, registry, true, true); }, "reserved graphics program address");
 }
 
+
+void CheckNullPixel(AgcDriver::VulkanDevice& device) {
+    using namespace AgcDriver::DriverDetail;
+    using namespace ShaderRecompiler;
+    Fixture front;
+    front.Initialize(2u);
+    const auto null = PrepareNullPixelSnapshot(device);
+    ShaderRegistry registry;
+    registry.emplace(front.snapshot->codeAddress, front.snapshot);
+    registry.emplace(null->codeAddress, null);
+    AgcDriver::QueueState queue{};
+    front.Bind(queue, 0xc8u, 0x8bu);
+    queue.shader[0x8u] = 0;
+    queue.shader[0x9u] = 0;
+    queue.shader[0xbu] = 16u << 1u;
+    queue.context[0x8e] = 0;
+    queue.context[0x8f] = 0;
+    queue.context[0x1b3] = 0x3u;
+    queue.context[0x1b4] = 0x3u;
+    queue.context[0x1b6] = 0x8001u;
+    Require(AgcDriver::Graphics::PixelProgramSkipped(queue), "a draw with a null pixel program address was not skipped");
+    DrawDecode draw{};
+    draw.state.stages.path = AgcDriver::Graphics::ShaderPath::Vertex;
+    draw.state.stages.vertexWaveSize = 32u;
+    draw.state.stages.fragmentWaveSize = 64u;
+    DecodeGraphicsPrograms(draw, queue, registry, false, true);
+    draw.pixel = AgcDriver::Graphics::DecodePixelStageInfo(queue.context, AgcDriver::Graphics::ExportMappings(draw.state), true);
+    const auto& program = draw.programs.back();
+    Require(draw.roles.back() == ProgramRole::Fragment && program.snapshot == null, "a skipped pixel program did not use the null program");
+    Require(program.userData.empty(), "the null pixel program took user SGPRs from a previous pixel program");
+    std::vector<LinkedProgram> linked;
+    std::vector<MemoryRegion> memory;
+    for (std::size_t index = 0; index < draw.programs.size(); ++index) {
+        linked.push_back({draw.roles[index], draw.programs[index].binary, draw.programs[index].userDataBase, draw.programs[index].firstUserSgpr, draw.programs[index].userData});
+        memory.insert(memory.end(), draw.programs[index].memory.begin(), draw.programs[index].memory.end());
+    }
+    for (const std::uint32_t pushOffset : {0u, 20u}) {
+        RecompileRequest request{program.binary, {64u, program.firstUserSgpr, program.userData, {}, draw.pixel, {}, memory, RegisteredFloatMode(*null)}, device.Target(), {0, 0, pushOffset, 128u - pushOffset}, GraphicsCompileContext{program.firstUserSgpr, linked, {}, {}, {0, 3, 4, 1}}};
+        static_cast<void>(InvocationFor(*null, program.codeOffset, request));
+    }
+}
 }
 
 int main(int argc, char** argv) {
@@ -245,6 +300,7 @@ int main(int argc, char** argv) {
         Check(*device, AgcDriver::Graphics::ShaderPath::Vertex, dump);
         Check(*device, AgcDriver::Graphics::ShaderPath::Geometry, dump);
         Check(*device, AgcDriver::Graphics::ShaderPath::Tessellation, dump);
+        CheckNullPixel(*device);
         std::cout << "prepared graphics ABI tests passed\n";
         return 0;
     } catch (const std::exception& error) {

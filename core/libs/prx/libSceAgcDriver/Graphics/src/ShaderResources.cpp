@@ -964,7 +964,11 @@ void ShaderResources::buildPrepare(std::span<const CompiledShader> shaders, cons
             const auto firstDeferred = deferredImages.size();
             for (const auto& binding : shader.program->bindings) {
                 Require(binding.descriptorSet == 0, "unexpected descriptor set: every shader resource must use descriptor set zero");
-                Require(occupied.insert(binding.binding).second, "duplicate shader binding");
+                if (!occupied.insert(binding.binding).second) {
+                    std::string stages;
+                    for (const auto& each : shaders) stages += " " + std::to_string(static_cast<std::uint32_t>(each.stage)) + "(" + std::to_string(each.program->bindings.size()) + ")";
+                    Require(false, "duplicate shader binding " + std::to_string(binding.binding) + " (role " + std::to_string(static_cast<std::uint32_t>(binding.role)) + ") in stage " + std::to_string(static_cast<std::uint32_t>(shader.stage)) + "; stages (bindings):" + stages);
+                }
                 const bool addressRole = binding.role == ShaderRecompiler::DescriptorRole::BdaPagetable || binding.role == ShaderRecompiler::DescriptorRole::FaultBuffer;
                 const bool bufferRole = addressRole || binding.role == ShaderRecompiler::DescriptorRole::GuestBuffers || binding.role == ShaderRecompiler::DescriptorRole::ShaderData || binding.role == ShaderRecompiler::DescriptorRole::FlattenedSrt || binding.role == ShaderRecompiler::DescriptorRole::Gds;
                 const bool imageRole = binding.role == ShaderRecompiler::DescriptorRole::GuestImages || binding.role == ShaderRecompiler::DescriptorRole::GuestSamplers;
