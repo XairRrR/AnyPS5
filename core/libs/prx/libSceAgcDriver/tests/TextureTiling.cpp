@@ -370,4 +370,41 @@ void RunTextureTilingTests() {
 
     reject([] { ComputeSurfaceSize({}, 1); }, "empty mip chain");
     reject([] { ComputeSurfaceSize(ComputeMipLayout(TextureTileMode::kLinear, 1, 4, 4, 1), 0); }, "zero array layers");
+
+    {
+        GuestTextureResource array{};
+        array.baseAddress = 0x10000000ull;
+        array.width = 16;
+        array.height = 16;
+        array.depthOrLastArray = 3200;
+        array.baseArray = 1536;
+        array.mipCount = 2;
+        array.tileMode = TextureTileMode::kStandard64KB;
+        array.dimension = TextureDimension::k2DArray;
+        array.format = 56;
+        const auto geometry = DescribeSurface(array);
+        const auto window = StorageArrayWindow(array, 2048);
+        Require(window.baseAddress == array.baseAddress + 1536ull * geometry.layerBytes, "a storage view past maxImageArrayLayers must start at its first viewed slice");
+        Require(window.baseArray == 0 && window.depthOrLastArray == 1664, "a storage view past maxImageArrayLayers must hold exactly its viewed slices");
+        Require(DescribeSurface(window).layerBytes == geometry.layerBytes && DescribeSurface(window).mips[1].tiledOffset == geometry.mips[1].tiledOffset, "a viewed slice must keep the layout of the whole array's slice");
+
+        auto fitting = array;
+        fitting.depthOrLastArray = 2047;
+        const auto kept = StorageArrayWindow(fitting, 2048);
+        Require(kept.baseAddress == fitting.baseAddress && kept.baseArray == fitting.baseArray && kept.depthOrLastArray == fitting.depthOrLastArray, "an array within maxImageArrayLayers must keep its descriptor");
+
+        auto linear = array;
+        linear.tileMode = TextureTileMode::kLinear;
+        Require(StorageArrayWindow(linear, 2048).baseAddress == linear.baseAddress + 1536ull * DescribeSurface(linear).layerBytes, "a linear storage view past maxImageArrayLayers must start at its first viewed slice");
+
+        auto wide = array;
+        wide.baseArray = 1000;
+        reject([&] { static_cast<void>(StorageArrayWindow(wide, 2048)); }, "more array slices than maxImageArrayLayers");
+        auto xorSwizzle = array;
+        xorSwizzle.tileMode = TextureTileMode::kR64KBX;
+        reject([&] { static_cast<void>(StorageArrayWindow(xorSwizzle, 2048)); }, "depends on the slice");
+        auto volume = array;
+        volume.dimension = TextureDimension::k3D;
+        reject([&] { static_cast<void>(StorageArrayWindow(volume, 2048)); }, "not a 1D or 2D array");
+    }
 }
