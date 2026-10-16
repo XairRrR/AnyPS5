@@ -405,6 +405,9 @@ void RunTextureTilingTests() {
         reject([&] { static_cast<void>(StorageArrayWindow(xorSwizzle, 2048)); }, "depends on the slice");
         auto volume = array;
         volume.dimension = TextureDimension::k3D;
-        reject([&] { static_cast<void>(StorageArrayWindow(volume, 2048)); }, "not a 1D or 2D array");
+        Require(StorageArrayWindow(volume, 2048).baseAddress == volume.baseAddress && StorageArrayWindow(volume, 2048).depthOrLastArray == volume.depthOrLastArray, "a volume deeper than maxImageArrayLayers is not an array and keeps its descriptor");
+        auto cube = array;
+        cube.dimension = TextureDimension::kCube;
+        reject([&] { static_cast<void>(StorageArrayWindow(cube, 2048)); }, "not a 1D or 2D array");
     }
 }

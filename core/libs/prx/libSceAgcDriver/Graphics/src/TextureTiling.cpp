@@ -436,7 +436,7 @@ bool LevelsFitAllocation(const GuestTextureResource& surface, std::uint32_t leve
 }
 
 GuestTextureResource StorageArrayWindow(const GuestTextureResource& viewed, std::uint32_t maxArrayLayers) {
-    if (viewed.depthOrLastArray < maxArrayLayers) return viewed;
+    if (viewed.depthOrLastArray < maxArrayLayers || viewed.dimension == TextureDimension::k3D) return viewed;
     Require(viewed.dimension == TextureDimension::k2DArray || viewed.dimension == TextureDimension::k1DArray, "a storage image with more layers than maxImageArrayLayers that is not a 1D or 2D array is not implemented");
     Require(viewed.baseArray <= viewed.depthOrLastArray, "a storage view's first array slice lies past its last");
     Require(viewed.depthOrLastArray - viewed.baseArray < maxArrayLayers, "a storage view of more array slices than maxImageArrayLayers is not implemented");
