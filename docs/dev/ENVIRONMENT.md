@@ -607,6 +607,8 @@ The code reads environment names through `getenv`, `IsEnvironmentSet`, `kibSetti
 |------|------|--------|---------|-------------|
 | `ANYPS5_LOADEXEC_ARGV_SKIP` | string | `core/libs/prx/libkernel/System/src/Process.cpp` |  | on Windows, set to `1` to drop the first process argument and clear the variable |
 | `APS5_COARSE_TIMED_WAITS` | presence | `core/libs/prx/libkernel/Time/TimedWait.cpp` |  | on Windows, rounds timed waits up to the scheduler tick |
+| `APS5_GUEST_AFFINITY` | presence | `core/libs/prx/libkernel/Pthread/src/Thread.cpp` |  | pins every guest thread to the efficiency cores of a hybrid CPU |
+| `APS5_GUEST_AFFINITY_MASK` | integer | `core/libs/prx/libkernel/Pthread/src/Thread.cpp` |  | hex core mask that guest threads are pinned to |
 | `APS5_JOB_AFFINITY` | presence | `core/libs/prx/libkernel/Pthread/src/Thread.cpp` |  | on Windows, pins the title's job worker threads to the efficiency cores of a hybrid CPU |
 | `APS5_JOB_AFFINITY_MASK` | integer | `core/libs/prx/libkernel/Pthread/src/Thread.cpp` |  | on Windows, hex core mask that job worker threads are pinned to |
 | `APS5_NO_DIRECT_MEMORY_SECTION_POOL` | presence | `core/libs/prx/libkernel/DirectMemory/DirectMemory.cpp` |  | on Windows, creates a section for every direct-memory allocation and closes it at release instead of reusing released sections that never held guest data |
